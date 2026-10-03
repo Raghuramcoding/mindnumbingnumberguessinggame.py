@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Number Guessing Game</title>
+    <style>
+        /* This makes the game look like your Python version */
+        body, html {
+            margin: 0; padding: 0; height: 100%;
+            background-color: black; color: white;
+            font-family: Arial, sans-serif; overflow: hidden;
+        }
+
+        #effect-canvas {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%; z-index: 1;
+        }
+
+        #ui-layer {
+            position: relative; z-index: 2;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            height: 100vh; text-align: center;
+        }
+
+        .screen { display: none; }
+        .active { display: flex; flex-direction: column; align-items: center; }
+
+        button {
+            width: 300px; padding: 10px; margin: 5px;
+            font-size: 18px; cursor: pointer;
+        }
+
+        input {
+            font-size: 24px; width: 100px; text-align: center;
+            margin: 10px; border-radius: 5px;
+        }
+
+        .trophy-row { display: flex; gap: 15px; margin-bottom: 20px; }
+        .bronze { color: #cd7f32; } .silver { color: #c0c0c0; }
+        .gold { color: #ffd700; } .platinum { color: #e5e4e2; }
+
+        #hearts { color: red; font-size: 30px; margin: 10px; }
+    </style>
+</head>
+<body>
+
+<canvas id="effect-canvas"></canvas>
+
+<div id="ui-layer">
+    <div id="menu-screen" class="screen active">
+        <h1>WELCOME TO THE NUMBER GUESSING GAME!</h1>
+        <p>Choose your difficulty level:</p>
+        
+        <div class="trophy-row">
+            <span class="bronze">🥉 Bronze: <span id="count-bronze">0</span></span>
+            <span class="silver">🥈 Silver: <span id="count-silver">0</span></span>
+            <span class="gold">🥇 Gold: <span id="count-gold">0</span></span>
+            <span class="platinum">🏆 Platinum: <span id="count-platinum">0</span></span>
+        </div>
+
+        <button onclick="startGame('easy', 25, 20)">Easy (1-25, 20 attempts)</button>
+        <button onclick="startGame('medium', 50, 10)">Medium (1-50, 10 attempts)</button>
+        <button onclick="startGame('hard', 100, 5)">Hard (1-100, 5 attempts)</button>
+        <button id="btn-platinum" disabled onclick="startGame('platinum', 1000, 100)">Platinum (Locked)</button>
+        
+        <div style="margin-top: 20px;">
+            <button style="width: 145px;" onclick="resetTrophies()">Reset Trophies</button>
+        </div>
+    </div>
+
+    <div id="game-screen" class="screen">
+        <h2 id="game-info"></h2>
+        <div id="hearts"></div>
+        <p id="attempts-text"></p>
+        <p id="feedback"></p>
+        <input type="number" id="guess-input" placeholder="0">
+        <div>
+            <button onclick="checkGuess()">Submit Guess</button>
+            <button onclick="showMenu()">Change Difficulty</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Game State
+    let trophies = JSON.parse(localStorage.getItem('guessGameTrophies')) || {bronze:0, silver:0, gold:1, platinum:0};
+    let secret = 0;
+    let attempts = 0;
+    let maxAttempts = 0;
+    let currentDiff = '';
+    let maxNum = 0;
+
+    const canvas = document.getElementById('effect-canvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    let effectMode = 'none';
+
+    // --- Core Functions ---
+    function save() {
+        localStorage.setItem('guessGameTrophies', JSON.stringify(trophies));
+        updateMenu();
+    }
+
+    function updateMenu() {
+        document.getElementById('count-bronze').innerText = trophies.bronze;
+        document.getElementById('count-silver').innerText = trophies.silver;
+        document.getElementById('count-gold').innerText = trophies.gold;
+        document.getElementById('count-platinum').innerText = trophies.platinum;
+        
+        const platBtn = document.getElementById('btn-platinum');
+        if (trophies.gold > 0) {
+            platBtn.disabled = false;
+            platBtn.innerText = "Platinum (1-1000, 100 attempts)";
+        }
+    }
+
+    function resetTrophies() {
+        if(confirm("Are you sure you want to reset all trophies?")) {
+            trophies = {bronze:0, silver:0, gold:0, platinum:0};
+            save();
+        }
+    }
+
+    function showMenu() {
+        document.getElementById('menu-screen').className = 'screen active';
+        document.getElementById('game-screen').className = 'screen';
+        effectMode = 'none';
+    }
+
+    function startGame(diff, max, tries) {
+        currentDiff = diff;
+        maxNum = max;
+        maxAttempts = tries;
+        attempts = 0;
+        
+        // Pick a multiple of 10 like in your Python code
+        let high = Math.floor(max / 10) * 10;
+        secret = (Math.floor(Math.random() * (high / 10)) + 1) * 10;
+
+        document.getElementById('game-info').innerText = `Guess 1 to ${max}`;
+        document.getElementById('feedback').innerText = '';
+        document.getElementById('guess-input').value = '';
+        updateGameUI();
+
+        document.getElementById('menu-screen').className = 'screen';
+        document.getElementById('game-screen').className = 'screen active';
+    }
+
+    function updateGameUI() {
+        document.getElementById('hearts').innerText = "❤️".repeat(maxAttempts - attempts);
+        document.getElementById('attempts-text').innerText = `Attempts: ${attempts}/${maxAttempts}`;
+    }
+
+    function checkGuess() {
+        let guess = parseInt(document.getElementById('guess-input').value);
+        if (isNaN(guess)) return;
+
+        attempts++;
+        updateGameUI();
+
+        if (guess === secret) {
+            alert(`🎉 CORRECT! The number was ${secret}`);
+            awardTrophy();
+            showMenu();
+        } else if (attempts >= maxAttempts) {
+            alert(`😢 Game Over! The number was ${secret}`);
+            showMenu();
+        } else {
+            let diff = Math.abs(guess - secret);
+            let p10 = maxNum * 0.1;
+            let p20 = maxNum * 0.2;
+
+            if (diff <= p10) { effectMode = 'fire'; feedback("🔥 VERY HOT!"); }
+            else if (diff <= p20) { effectMode = 'fire'; feedback("🌡️ HOT!"); }
+            else if (diff <= p20 * 3) { effectMode = 'snow'; feedback("❄️ COLD!"); }
+            else { effectMode = 'snow'; feedback("🧊 VERY COLD!"); }
+            
+            let hint = guess < secret ? "HIGHER" : "LOWER";
+            document.getElementById('feedback').innerText += `\n💡 Hint: Try ${hint}`;
+        }
+    }
+
+    function feedback(text) { document.getElementById('feedback').innerText = text; }
+
+    function awardTrophy() {
+        if (currentDiff === 'hard' && trophies.gold === 0) alert("Platinum Mode Unlocked!");
+        trophies[currentDiff]++;
+        save();
+    }
+
+    // --- Visual Effects ---
+    function animate() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (effectMode === 'fire') {
+            if (Math.random() < 0.2) particles.push({x: Math.random()*canvas.width, y: canvas.height, s: Math.random()*5+2, v: Math.random()*3+1, c: 'orange'});
+        } else if (effectMode === 'snow') {
+            if (Math.random() < 0.2) particles.push({x: Math.random()*canvas.width, y: 0, s: Math.random()*4+1, v: Math.random()*2+1, c: 'white'});
+        }
+
+        for (let i = 0; i < particles.length; i++) {
+            let p = particles[i];
+            ctx.fillStyle = p.c;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.s, 0, Math.PI*2);
+            ctx.fill();
+            p.y += (effectMode === 'fire' ? -p.v : p.v);
+            if (p.y < 0 || p.y > canvas.height) particles.splice(i, 1);
+        }
+        requestAnimationFrame(animate);
+    }
+
+    updateMenu();
+    animate();
+</script>
+</body>
+</html>
